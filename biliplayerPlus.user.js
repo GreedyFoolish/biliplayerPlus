@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bilibili 播放器增强
 // @namespace    https://github.com/Grow-Willing/biliplayerPlus
-// @version      2022.5.28
+// @version      2022.10.8
 // @description  快捷键设置,回车快速发弹幕,双击全屏,自动选择最高清画质、播放、全屏、关闭弹幕、自动转跳和自动关灯等
 // @author       sugar
 // @license      MIT
@@ -13,7 +13,7 @@
 // @match        *://www.bilibili.com/video/bv*
 // @match        *://www.bilibili.com/watchlater/*
 // @match        *://www.bilibili.com/medialist/*
-// @require      https://cdn.bootcdn.net/ajax/libs/mathjs/10.4.3/math.js
+// @require      https://cdn.bootcdn.net/ajax/libs/bignumber.js/9.1.0/bignumber.js
 // @require      https://cdn.bootcdn.net/ajax/libs/js-cookie/3.0.1/js.cookie.js
 // @resource     MaterialIcons https://fonts.googleapis.com/icon?family=Material+Icons
 // @grant        GM_addStyle
@@ -25,15 +25,294 @@
 // @grant        GM_getResourceText
 // ==/UserScript==
 (function () {
+	let data={
+		settingName: 'bilibili播放器plus设置',//设置面板标题
+		elementMapper:[{//不同页面元素映射至一致
+				filter:/(video\/[AaBb][Vv])|(watchlater)|(medialist)/,//正则
+				settingRootElement:`[aria-label="哔哩哔哩播放器"]`,//设置面板的挂载节点
+				showElement:`[aria-label="哔哩哔哩播放器"]`,//全屏时的最大元素
+				videoTag:"#bilibili-player video",//video标签
+				videoTag_replace:"#bilibili-player bwp-video",//video标签
+				settingIcon:".bpx-player-ctrl-setting .bpx-player-ctrl-btn-icon",//设置按钮
+				qualityItems:".bpx-player-ctrl-quality-menu-item ",//画质选择按钮
+				wideIcon:".bpx-player-ctrl-wide",//宽屏按钮
+				webFullScreenIcon:".bpx-player-ctrl-web",//网页全屏按钮
+				fullScreenIcon:".bpx-player-ctrl-full",//全屏按钮
+				qualityControlBar:".bpx-player-ctrl-quality-menu",//原生画质切换面板
+				speedControlBar:".bpx-player-ctrl-playbackrate",//原生速度切换面板
+				highlightBar:".bpx-player-pbp",//高能进度条
+				touchControlMask:".bilibili-player-dm-tip-wrap",//原生视频遮罩
+			},{
+				filter:/bangumi/,
+				settingRootElement:`[aria-label="哔哩哔哩播放器"]`,//设置面板的挂载节点
+				showElement:`[aria-label="哔哩哔哩播放器"]`,
+				videoTag:"#bilibili-player video",
+				settingIcon:".squirtle-video-setting .squirtle-setting-icon",
+				qualityItems:".bui-select-quality-menu .bui-select-list .bui-select-item",
+				wideIcon:".squirtle-video-widescreen",//宽屏按钮
+				webFullScreenIcon:".squirtle-video-pagefullscreen",//网页全屏按钮
+				fullScreenIcon:".squirtle-video-fullscreen",//全屏按钮
+				qualityControlBar:".squirtle-video-quality .squirtle-select-list",//原生画质切换面板
+				speedControlBar:".squirtle-video-speed .squirtle-select-list",//原生速度切换面板
+				highlightBar:"#bilibili_pbp",//高能进度条
+				touchControlMask:".bilibili-player-dm-tip-wrap",//原生视频遮罩
+			},
+		],
+	}
+	let method={
+		//获取video标签
+		getVideoTag(){
+			let video=document.querySelector(this.elementMapper["videoTag"]);
+			if(video){
+				
+			}else{
+				video=document.querySelector(this.elementMapper["videoTag_replace"]);
+			}
+			return video;
+		},
+		getHighlightBar(){
+			return document.querySelector(this.elementMapper["highlightBar"]);
+		},
+		getWideIcon(){
+			let wideIcon=document.querySelector(this.elementMapper["wideIcon"]);
+			return wideIcon;
+		},
+		getWebFullScreenIcon(){
+			let webFullScreenIcon=document.querySelector(this.elementMapper["webFullScreenIcon"]);
+			return webFullScreenIcon;
+		},
+		getFullScreenIcon(){
+			let fullScreenIcon=document.querySelector(this.elementMapper["fullScreenIcon"]);
+			return fullScreenIcon;
+		},
+		getQualityItems(){
+			let qualityItems=document.querySelectorAll(this.elementMapper["qualityItems"]);
+			return qualityItems;
+		},
+		getSettingIcon(){
+			let settingIcon=document.querySelector(this.elementMapper["settingIcon"]);
+			return settingIcon;
+		},
+		getShowElement(){
+			let showElement=document.querySelector(this.elementMapper["showElement"]);
+			return showElement;
+		},
+		getQualityControlBar(){
+			let qualityControlBar=document.querySelector(this.elementMapper["qualityControlBar"]);
+			return qualityControlBar;
+		},
+		getSpeedControlBar(){
+			let speedControlBar=document.querySelector(this.elementMapper["speedControlBar"]);
+			return speedControlBar;
+		},
+		iswideScreen(){//是否是宽屏
+			let iswideScreen=false;
+			let element=this.getShowElement().parentElement;
+			if(element.classList.contains("mode-widescreen")||element.dataset.screen=="wide"){
+				iswideScreen=true;
+			}
+			return iswideScreen;
+		},
+		isfullScreen(){//是否是宽屏
+			let isfullScreen=false;
+			let element=this.getShowElement().parentElement;
+			if(element.classList.contains("mode-fullscreen")||element.dataset.screen=="full"){
+				isfullScreen=true;
+			}
+			return isfullScreen;
+		},
+
+		////////////////////////////////功能函数
+		/**
+		 * 更改视频速度
+		 * @param {number} speed 要更改的速度
+		 */
+		changeVideoSpeed(speed){
+			if(speed>=0.1&&speed<=16){
+				let savedSpeed=Cookies.get("videoSpeed");
+				this.preSpeed=savedSpeed?savedSpeed:1;
+				this.getVideoTag().playbackRate=speed;
+				Cookies.set("videoSpeed", speed);
+			}
+		},
+		wideSwitch(){//切换宽屏
+			this.getWideIcon().click();
+		},
+		webFullScreenSwitch(){//切换网页全屏
+			this.getWebFullScreenIcon().click();
+		},
+		fullScreenSwitch(){//切换全屏
+			this.getFullScreenIcon().click();
+		},
+		
+		/**
+		 * 执行按键功能
+		 * @param {string} key 键值
+		 */
+		keyHandler(key){
+			switch (key) {
+				case "openSettingShortcut":
+					this.switchSettingPanel();
+					break;
+				case "speedUp":
+					{
+						let defaultChangeSpeed=this.config.defaultChangeSpeed.value;
+						let speed=this.getVideoTag().playbackRate;
+						nextSpeed=new BigNumber(speed).plus(defaultChangeSpeed);
+						this.changeVideoSpeed(nextSpeed);
+						this.messageShow(`播放速度增加至 ${this.getVideoTag().playbackRate}`);
+					}
+					break;
+				case "speedDown":
+					{
+						let defaultChangeSpeed=this.config.defaultChangeSpeed.value;
+						let speed=this.getVideoTag().playbackRate;
+						nextSpeed=new BigNumber(speed).minus(defaultChangeSpeed);
+						this.changeVideoSpeed(nextSpeed);
+						this.messageShow(`播放速度减少至 ${this.getVideoTag().playbackRate}`);
+					}
+					break;
+				case "switchSpeedChange":
+					{
+						let videoTag=this.getVideoTag();
+						if(videoTag.playbackRate==1){
+							let switchSpeed=this.preSpeed?this.preSpeed:this.config.defaultSpeed.value;
+							this.changeVideoSpeed(switchSpeed);
+						}else{
+							this.changeVideoSpeed(1);
+						};
+						this.messageShow(`播放速度设置为 ${this.getVideoTag().playbackRate}`);
+					}
+					break;
+				case "switchWide":
+					this.wideSwitch();
+					break;
+				case "switchWebFullScreen":
+					this.webFullScreenSwitch();
+					break;
+				case "switchFullScreen":
+					this.fullScreenSwitch();
+					break;
+				default:
+					break;
+			}
+		},
+
+		////////////////////////////////初始化函数
+		qualityControlBarInit(){//画质切换面板初始化
+			let qualityControlBarList=this.getQualityControlBar().querySelectorAll("li");
+			for (let i = 0; i < qualityControlBarList.length; i++) {
+				let element = qualityControlBarList[i];
+				let text=element.textContent;
+				if(/登录/.test(text)){//需要登录,登录后不显示
+					continue;
+				}else if(/大会员/.test(text)){//需要登录+大会员
+					
+				}else{
+					if(this.config.autoQuality.value){
+						element.click();
+					}
+					console.log(text);
+					break;
+				}
+				
+			}
+		},
+		speedControlBarInit(){//原生速度切换面板初始化
+			let speedControlBar=this.getSpeedControlBar();
+			speedControlBar.addEventListener("click",(e)=>{
+				let target=e.target;
+				let speed=Number(target.textContent.replace("x",""));
+				console.log(speed);
+			});
+		},
+		controlBarInit(){//设置图标初始化
+			console.log("开始初始化控制栏");
+			this.getSettingIcon().addEventListener("click",this.switchSettingPanel.bind(this));
+			this.speedControlBarInit();
+			this.qualityControlBarInit();
+			console.log("开始监听触摸事件");
+			this.touchHandler(this.getShowElement());
+		},
+		init(){//按照时钟周期性初始化，只有当需要的元素出来时才会初始化
+			let settingControlInit=()=>{
+				if(this.maxInitTimes){
+					setTimeout(() => {
+						try {
+							console.log("初始化开始，更改屏幕尺寸");
+							let {list,value}=this.config.defaultScreenSize;
+							switch (list[value].key) {
+								case "wide":
+									if (this.iswideScreen()) {
+										
+									}else{
+										this.wideSwitch();
+									}
+									break;
+								case "webFullScreen":
+									if (this.isfullScreen()) {
+										
+									}else{
+										this.webFullScreenSwitch();
+									}
+									break;
+								default:
+									break;
+							};
+							console.log("屏幕尺寸更改完毕，开始调节视频速度");
+							if (this.config.autoSpeed.value) {
+								let speed=Cookies.get("videoSpeed");
+								let defaultSpeed=speed?speed:this.config.defaultSpeed.value;
+								this.changeVideoSpeed(defaultSpeed);
+								this.messageShow("已自动调整速度为"+defaultSpeed+"倍");
+							}
+							this.controlBarInit();
+							console.log("初始化已完成");
+						} catch (error) {
+							console.error("播放器控制栏未加载完成，等待重新开始");
+							console.error(error);
+							this.maxInitTimes--;
+							settingControlInit();
+						}
+					}, 1000);
+				}
+			};
+			settingControlInit();
+		},
+	}
+
+
+
 	//浮点数计算器
-	const floatCalc = math.create({
-		number: 'BigNumber',
-		matrix: 'Matrix',
-		precision: 64
-	});
+	// const floatCalc = math.create({
+	// 	number: 'BigNumber',
+	// 	matrix: 'Matrix',
+	// 	precision: 64
+	// });
+	// math.config({
+	// 	number: 'BigNumber',
+	// 	matrix: 'Matrix',
+	// 	precision: 64
+	// })
 	GM_addStyle(GM_getResourceText("MaterialIcons"));
-	let bilibili={
-		settingName: 'bilibili播放器plus设置',
+	let tampermonkeyTool={
+		settingName: 'tampermonkeyTool默认设置',//设置面吧标题
+		elementMapper:[{
+			filter:/.*/,//正则
+			settingRootElement:"body",//设置面板的挂载节点
+			showElement:`body`,//全屏时的最大元素
+			videoTag:"#bilibili-player video",//video标签
+			videoTag_replace:"#bilibili-player bwp-video",//video标签
+			settingIcon:".bilibili-player-video-btn-setting .bp-svgicon",//设置按钮
+			qualityItems:".bui-select-quality-menu .bui-select-list .bui-select-item",//画质选择按钮
+			wideIcon:".bilibili-player-video-btn-widescreen",//宽屏按钮
+			webFullScreenIcon:".bilibili-player-video-web-fullscreen",//网页全屏按钮
+			fullScreenIcon:".bilibili-player-video-btn-fullscreen",//全屏按钮
+			qualityControlBar:".bilibili-player-video-quality-menu .bui-select-list",//原生画质切换面板
+			speedControlBar:".bilibili-player-video-btn-speed-menu",//原生速度切换面板
+			highlightBar:"#bilibili_pbp",//高能进度条
+			touchControlMask:".bilibili-player-dm-tip-wrap",//原生视频遮罩
+		}],//元素映射表
 		default:{//默认设置
 			defaultScreenSize:{//默认屏幕尺寸
 				name:"默认屏幕尺寸",
@@ -71,7 +350,7 @@
 			useShadowRoot:{//shadowroot
 				name:"启用shadowroot",
 				type:"bool",
-				title:"若设置面板样式异常可以尝试开启此项",
+				title:"若设置面板样式异常可以尝试开启此项，需重开设置面板",
 				value:false
 			},
 			shortcutPreventDefault:{//取消快捷键默认行为
@@ -81,10 +360,10 @@
 				value:false
 			},
 			keyBindOne2One:{
-				name:"区分同输出的不同按键",
+				name:"根据键位绑定快捷键",
 				type:"bool",
-				title:"关闭后将根据按键的实际输出进行绑定",
-				value:false
+				title:"关闭后将根据实际输出进行绑定",
+				value:true
 			},
 			openSettingShortcut:{//快捷键打开设置
 				name:"打开设置",
@@ -167,38 +446,8 @@
 			},
 		},
 		config:GM_listValues(),//保存的设置
+		maxInitTimes:6,//最大初始化次数
 		gridListSettingMapper:{},//网格列表
-		elementMapper:[{
-				filter:/(video\/[AaBb][Vv])|(watchlater)|(medialist)/,//正则
-				showElement:`[aria-label="哔哩哔哩播放器"]`,//全屏时的最大元素
-				videoTag:"#bilibili-player video",//video标签
-				videoTag_replace:"#bilibili-player bwp-video",//video标签
-				settingTag:".bilibili-player-video-btn-setting-wrap",//设置内容的盒子
-				settingIcon:".bilibili-player-video-btn-setting .bp-svgicon",//设置按钮
-				qualityItems:".bui-select-quality-menu .bui-select-list .bui-select-item",//画质选择按钮
-				wideIcon:".bilibili-player-video-btn-widescreen",//宽屏按钮
-				webFullScreenIcon:".bilibili-player-video-web-fullscreen",//网页全屏按钮
-				fullScreenIcon:".bilibili-player-video-btn-fullscreen",//全屏按钮
-				qualityControlBar:".bilibili-player-video-quality-menu .bui-select-list",//原生画质切换面板
-				speedControlBar:".bilibili-player-video-btn-speed-menu",//原生速度切换面板
-				highlightBar:"#bilibili_pbp",//高能进度条
-				touchControlMask:".bilibili-player-dm-tip-wrap",//原生视频遮罩
-			},{
-				filter:/bangumi/,
-				showElement:`[aria-label="哔哩哔哩播放器"]`,
-				videoTag:"#bilibili-player video",
-				settingTag:".squirtle-setting-panel-wrap",
-				settingIcon:".squirtle-video-setting .squirtle-setting-icon",
-				qualityItems:".bui-select-quality-menu .bui-select-list .bui-select-item",
-				wideIcon:".squirtle-video-widescreen",//宽屏按钮
-				webFullScreenIcon:".squirtle-video-pagefullscreen",//网页全屏按钮
-				fullScreenIcon:".squirtle-video-fullscreen",//全屏按钮
-				qualityControlBar:".squirtle-video-quality .squirtle-select-list",//原生画质切换面板
-				speedControlBar:".squirtle-video-speed .squirtle-select-list",//原生速度切换面板
-				highlightBar:"#bilibili_pbp",//高能进度条
-				touchControlMask:".bilibili-player-dm-tip-wrap",//原生视频遮罩
-			},
-		],
 		keyboardBindList:{},//已用按键列表
 		touchList:{},//触屏按下的手指列表
 		getElementMapper(){//获取元素映射
@@ -213,82 +462,9 @@
 				}
 			}
 		},
-		//获取video标签
-		getVideoTag(){
-			let video=document.querySelector(this.elementMapper["videoTag"]);
-			if(video){
-				
-			}else{
-				video=document.querySelector(this.elementMapper["videoTag_replace"]);
-			}
-			return video;
-		},
-		/**
-		 * 更改视频速度
-		 * @param {number} speed 要更改的速度
-		 */
-		changeVideoSpeed(speed){
-			if(speed>=0.1&&speed<=16){
-				let savedSpeed=Cookies.get("videoSpeed");
-				this.preSpeed=savedSpeed?savedSpeed:1;
-				this.getVideoTag().playbackRate=speed;
-				Cookies.set("videoSpeed", speed);
-			}
-		},
-		getHighlightBar(){
-			return document.querySelector(this.elementMapper["highlightBar"]);
-		},
-		getSettingTag(){
-			let settingTable=document.querySelector(this.elementMapper["settingTag"]);
-			return settingTable;
-		},
-		getWideIcon(){
-			let wideIcon=document.querySelector(this.elementMapper["wideIcon"]);
-			return wideIcon;
-		},
-		getWebFullScreenIcon(){
-			let webFullScreenIcon=document.querySelector(this.elementMapper["webFullScreenIcon"]);
-			return webFullScreenIcon;
-		},
-		getFullScreenIcon(){
-			let fullScreenIcon=document.querySelector(this.elementMapper["fullScreenIcon"]);
-			return fullScreenIcon;
-		},
-		getQualityItems(){
-			let qualityItems=document.querySelectorAll(this.elementMapper["qualityItems"]);
-			return qualityItems;
-		},
-		getSettingIcon(){
-			let settingIcon=document.querySelector(this.elementMapper["settingIcon"]);
-			return settingIcon;
-		},
-		getShowElement(){
-			let showElement=document.querySelector(this.elementMapper["showElement"]);
-			return showElement;
-		},
-		getQualityControlBar(){
-			let qualityControlBar=document.querySelector(this.elementMapper["qualityControlBar"]);
-			return qualityControlBar;
-		},
-		getSpeedControlBar(){
-			let speedControlBar=document.querySelector(this.elementMapper["speedControlBar"]);
-			return speedControlBar;
-		},
-		iswideScreen(){//是否是宽屏
-			let iswideScreen=false;
-			let element=this.getShowElement().parentElement;
-			if(element.classList.contains("mode-widescreen")||element.dataset.screen=="wide"){
-				iswideScreen=true;
-			}
-			return iswideScreen;
-		},
-		isfullScreen(){//是否是宽屏
-			let isfullScreen=false;
-			let element=this.getShowElement().parentElement;
-			if(element.classList.contains("mode-fullscreen")||element.dataset.screen=="full"){
-				isfullScreen=true;
-			}
-			return isfullScreen;
+		getSettingRootElement(){
+			let settingRootElement=document.querySelector(this.elementMapper["settingRootElement"]);
+			return settingRootElement;
 		},
 		/**
 		 * 
@@ -576,7 +752,9 @@
 		 */
 		createProcessBar(start,end,step){//创建进度条
 			//点的个数
-			let pointNum=(end-start)/step;
+			let pointNum=new BigNumber(end)
+							.minus(start)
+							.dividedBy(step);
 			let container=document.createElement("div");
 			let shadowRoot=container;
 			if (this.config.useShadowRoot.value) {
@@ -702,7 +880,10 @@
 				//每个点的长度
 				let stepNumb=--container.stepNumb;
 				//更改真实值
-				container.trueNumb=math.number(floatCalc.evaluate(`${start}+${stepNumb}*${step}`));
+				container.trueNumb=new BigNumber(stepNumb)
+										.multipliedBy(step)
+										.plus(start)
+										.valueOf();
 				if(container.onChangeEnd){
 					container.onChangeEnd(container.trueNumb);
 				}
@@ -712,7 +893,10 @@
 				//每个点的长度
 				let stepNumb=++container.stepNumb;
 				//更改真实值
-				container.trueNumb=math.number(floatCalc.evaluate(`${start}+${stepNumb}*${step}`));
+				container.trueNumb=new BigNumber(stepNumb)
+										.multipliedBy(step)
+										.plus(start)
+										.valueOf();
 				if(container.onChangeEnd){
 					container.onChangeEnd(container.trueNumb);
 				}
@@ -734,11 +918,16 @@
 					//每个点的长度
 					let size=width/pointNum;
 					//四舍五入
-					let numb=floatCalc.round(newLeft/size);
+					let numb=new BigNumber(newLeft)
+								.dividedBy(size)
+								.toFixed(0);
 					if(container.stepNumb!==numb){
 						container.stepNumb=numb;
 						//真实的值
-						let trueNumb=math.number(floatCalc.evaluate(`${start}+${numb}*${step}`));
+						let trueNumb=new BigNumber(numb)
+										.multipliedBy(step)
+										.plus(start)
+										.valueOf();
 						container.trueNumb=trueNumb;
 					}
 				};
@@ -772,7 +961,10 @@
 					plusBtn.classList.remove("disabled");
 					minusBtn.classList.remove("disabled");
 				}
-				let leftWidth=floatCalc.evaluate(`${stepNumb}*100/${pointNum}`)+"%";
+				let leftWidthNum=new BigNumber(stepNumb)
+									.multipliedBy(100)
+									.dividedBy(pointNum);
+				let leftWidth=leftWidthNum+"%";
 				//设置进度条
 				activeProcessBar.style.width=leftWidth;
 				processDot.style.left=leftWidth;
@@ -785,9 +977,11 @@
 			//暴露初始化函数
 			container.initValue=(trueNumb)=>{
 				//计算是第几个点
-				let numb=floatCalc.evaluate(`(${trueNumb}-${start})/${step}`);
+				let numb=new BigNumber(trueNumb)
+							.minus(start)
+							.dividedBy(step);
 				//四舍五入
-				numb=floatCalc.round(numb);
+				numb=numb.toFixed(0);
 				container.stepNumb=numb;
 				container.trueNumb=trueNumb;
 			};
@@ -795,365 +989,6 @@
 			container.trueNumb=start;
 			shadowRoot.append(processContent);
 			return container;
-		},
-		createSettingPanel() {//创建设置面板
-			//唯一化处理
-			if(this.settingPanel){
-				this.settingPanel.remove();
-			}
-			//创建确认窗口
-			let confirm=document.createElement("div");
-			confirm.style=`
-				position:fixed;
-				display:flex;
-				flex-direction:column;
-				inset:20%;
-				background:rgba(33,33,33,.9);
-				border:1px solid hsla(0,0%,100%,.12);
-				z-index:999;
-				box-shadow:rgb(0 0 0 / 25%) 0px 0px 10px 0px;
-				color:white;
-			`;
-			confirm.innerHTML=`<div style="position:relative;width:100%;text-align:center;font-size:16px;line-height:40px;">
-				${this.settingName}
-			</div>`;
-			let btnList=document.createElement('div');
-			btnList.style=`
-				position:absolute;
-				font-size:16px;
-				top:10px;
-				right:10px;
-			`;
-			//刷新按钮
-			let refreshBtn=this.createButton(this.createIcon("&#xe5d5;"),"重置设置");
-			refreshBtn.classList.add("material-icons");
-			refreshBtn.addEventListener("click",()=>{
-				this.resetSetting();
-			});
-			btnList.append(refreshBtn);
-			//关闭按钮
-			let exitBtn=this.createButton(this.createIcon("&#xe5cd;"),"关闭");
-			exitBtn.classList.add("material-icons");
-			exitBtn.addEventListener("click",()=>{
-				this.switchSettingPanel();
-			});
-			btnList.append(exitBtn);
-			confirm.append(btnList);
-
-
-			let gridBox=document.createElement("div");
-			gridBox.style=`
-				display:grid;
-				width:100%;
-				overflow:auto;
-				grid-template-columns:repeat(2,50%);
-			`;
-
-			for (let i = 0; i < Object.keys(this.config).length; i++) {
-				let key=Object.keys(this.config)[i];
-				let {type,title} = this.config[key];
-				
-				if (/hidden/.test(type)){
-					continue;
-				}
-
-				let grid=document.createElement("div");
-				this.gridListSettingMapper[key]=grid;
-				grid.dependency=[];
-
-				grid.style="margin:10px 20px;";
-				//添加说明
-				if(title) grid.title=title;
-				//根据类型创建设置项
-				if(type=="bool"){
-					let {name,value} = this.config[key];
-					//开关
-					let switchTag=this.createSwitch();
-					switchTag.style.marginRight="10px";
-					switchTag.initValue(value);
-					switchTag.onChange=()=>{
-						this.config[key].value=switchTag.switchValue;
-						console.log(this.config);
-						this.saveValue(key);
-					};
-					grid.valueChangeHandler=(key)=>{
-						if(this.config[key].value!=switchTag.switchValue){
-							switchTag.switch();
-						}
-					};
-					grid.append(switchTag);
-					//标题
-					let discribe=document.createElement("span");
-					discribe.innerText=name;
-					grid.append(discribe);
-				}else if(type=="keyboard"){
-					let {name,value,code} = this.config[key];
-					//标题
-					let discribe=document.createElement("span");
-					discribe.innerText=name;
-					grid.append(discribe);
-					//告诉依赖key，此key使用了这个依赖
-					this.gridListSettingMapper.keyBindOne2One.dependency.push(key);
-
-					//按键
-					let keyboard=document.createElement("kbd");
-					keyboard.title="点击进行设置";
-					keyboard.style=`border: 2px solid #cdcdcd;
-					margin-left:10px;
-					padding: 0.25rem;
-					border-radius: 0.25rem;
-					font-size: .825rem;
-					box-shadow: inset 0 -1px 0 0 #cdcdcd;
-					cursor:pointer;
-					outline:none;`
-					keyboard.innerText=this.config.keyBindOne2One.value?code:value;
-					keyboard.tabIndex=0;
-					keyboard.addEventListener("focus",()=>{
-						keyboard.style.border="2px solid #00a1d6";
-					});
-					keyboard.addEventListener("blur",()=>{
-						keyboard.style.border="2px solid #cdcdcd";
-						keyboard.innerText=this.config.keyBindOne2One.value?this.config[key].code:this.config[key].value;
-					});
-
-					keyboard.addEventListener("keydown",(e)=>{
-						let valueText="",
-							codeText="";
-						if(e.ctrlKey){
-							valueText+=`Control`;
-							codeText+=`Control`;
-						}
-						if(e.altKey){
-							if(valueText)valueText+=` + `;
-							if(codeText)codeText+=` + `;
-							valueText+=`Alt`;
-							codeText+=`Alt`;
-						}
-						if(e.shiftKey){
-							if(valueText)valueText+=` + `;
-							if(codeText)codeText+=` + `;
-							valueText+=`Shift`;
-							codeText+=`Shift`;
-						}
-						if(e.key!=="Control"&&e.key!=="Alt"&&e.key!=="Shift"){
-							if(valueText)valueText+=` + `;
-							if(codeText)codeText+=` + `;
-							valueText+=e.key;
-							codeText+=e.code;
-							let result=this.config.keyBindOne2One.value?codeText:valueText;
-							let keyboard=this.getShortcutKeyName(result);
-							console.log(keyboard);
-							if (keyboard&&keyboard!=key) {
-								this.config[keyboard].name
-								this.messageShow(`快捷键与 "${this.config[keyboard].name}" 冲突`);
-								valueText=this.config[key].value;
-								codeText=this.config[key].code;
-							}else{
-								this.config[key].value=valueText;
-								this.config[key].code=codeText;
-								this.saveValue(key);
-							}
-						}
-						keyboard.innerText=this.config.keyBindOne2One.value?codeText:valueText;
-						e.stopPropagation();
-						e.preventDefault();
-					});
-					grid.valueChangeHandler=(key)=>{
-						let {value,code} = this.config[key];
-						keyboard.innerText=this.config.keyBindOne2One.value?code:value;
-					}
-					grid.append(keyboard);
-				}else if(type=="range"){//滑动条
-					let {name,start,end,step,value} = this.config[key];
-					let valueBox=document.createElement("div");
-					valueBox.style=`
-						margin-bottom:10px;
-					`;
-					//标题
-					let discribe=document.createElement("span");
-					discribe.innerText=name;
-					discribe.style.marginRight="10px";
-					//数值
-					let valueText=document.createElement("span");
-					valueText.innerText=value;
-					valueBox.append(discribe);
-					valueBox.append(valueText);
-					grid.append(valueBox);
-
-					//告诉依赖key，此key使用了这个依赖
-					this.gridListSettingMapper.rangeTransition.dependency.push(key);
-
-					let processbar=this.createProcessBar(start,end,step);
-					processbar.initValue(value);
-					processbar.onChange=(value)=>{
-						valueText.innerText=value;
-					};
-					processbar.onChangeEnd=(value)=>{
-						this.config[key].value=value;
-						this.saveValue(key);
-					};
-					grid.valueChangeHandler=(key)=>{
-						let {value} = this.config[key];
-						processbar.setTransition(this.config.rangeTransition.value);
-						processbar.initValue(value);
-					}
-					grid.append(processbar);
-				}else if(type=="select"){//下拉框
-					let {name,list,value} = this.config[key];
-					let valueBox=document.createElement("div");
-					valueBox.style=`
-						margin-bottom:10px;
-					`;
-					//标题
-					let discribe=document.createElement("span");
-					discribe.innerText=name;
-					discribe.style.marginRight="10px";
-					valueBox.append(discribe);
-					grid.append(valueBox);
-					let selectBox=this.createSelect(list,4,value);
-					selectBox.onValueChange=(value)=>{
-						let index=selectBox.choiceIndex;
-						this.config[key].value=index;
-						this.saveValue(key);
-					};
-					grid.valueChangeHandler=(key)=>{
-						let {value} = this.config[key];
-						if(selectBox.choiceIndex!=value)
-							selectBox.choiceIndex=value;
-					}
-					grid.append(selectBox);
-				}else if(type=="checkbox"){//多选框
-					let {name,value,totalControl,controlValue} = this.config[key];
-					let valueBox=document.createElement("div");
-					valueBox.style=`
-						margin-bottom:10px;
-					`;
-					//标题
-					let discribe=document.createElement("span");
-					discribe.innerText=name;
-					discribe.style.marginRight="10px";
-					valueBox.append(discribe);
-
-					//开关
-					let switchTag=this.createSwitch();
-					switchTag.style.marginRight="10px";
-					switchTag.initValue(controlValue);
-					switchTag.onChange=()=>{
-						this.config[key].controlValue=switchTag.switchValue;
-						console.log(this.config);
-						this.saveValue(key);
-					};
-
-					if (totalControl) {
-						valueBox.append(switchTag);
-					}
-
-					grid.append(valueBox);
-					let list=value.map((item,index)=>{
-						return this.config[item];
-					});
-					let checkboxBox=this.createCheckBox(list);
-					// checkboxBox.onValueChange=(value)=>{
-					// 	this.config[key].value=value;
-					// };
-					grid.valueChangeHandler=(key)=>{
-						let {value,totalControl,controlValue} = this.config[key];
-						if(totalControl&&controlValue!=switchTag.switchValue){
-							switchTag.switch();
-						}
-					}
-					grid.append(checkboxBox);
-				}
-				gridBox.appendChild(grid);
-				
-			}
-			confirm.append(gridBox);
-			this.getShowElement().append(confirm);
-			this.settingPanel=confirm;
-		},
-		settingPanelReload(){//重新加载设置面板
-			this.settingPanel.remove();
-			this.createSettingPanel();
-		},
-		switchSettingPanel(){//切换设置面板
-			if(this.settingPanel){
-				this.settingPanel.remove();
-				this.settingPanel=null;
-			}else{
-				this.createSettingPanel();
-			}
-		},
-		valueChangeHandler(key){
-			let {type} = this.config[key];
-			let gridTag=this.gridListSettingMapper[key];
-			gridTag.valueChangeHandler(key);
-			let dependency=gridTag.dependency;
-			if(dependency.length){
-				dependency.forEach((item)=>{
-					this.valueChangeHandler(item);
-				});
-			}
-		},
-		wideSwitch(){//切换宽屏
-			this.getWideIcon().click();
-		},
-		webFullScreenSwitch(){//切换网页全屏
-			this.getWebFullScreenIcon().click();
-		},
-		fullScreenSwitch(){//切换全屏
-			this.getFullScreenIcon().click();
-		},
-		/**
-		 * 执行按键功能
-		 * @param {string} key 键值
-		 */
-		keyHandler(key){
-			switch (key) {
-				case "openSettingShortcut":
-					this.switchSettingPanel();
-					break;
-				case "speedUp":
-					{
-						let defaultChangeSpeed=this.config.defaultChangeSpeed.value;
-						let speed=this.getVideoTag().playbackRate;
-						nextSpeed=floatCalc.evaluate(`${speed}+${defaultChangeSpeed}`);
-						this.changeVideoSpeed(nextSpeed);
-						this.messageShow(`播放速度增加至 ${this.getVideoTag().playbackRate}`);
-					}
-					break;
-				case "speedDown":
-					{
-						let defaultChangeSpeed=this.config.defaultChangeSpeed.value;
-						let speed=this.getVideoTag().playbackRate;
-						nextSpeed=floatCalc.evaluate(`${speed}-${defaultChangeSpeed}`);
-						this.changeVideoSpeed(nextSpeed);
-						this.messageShow(`播放速度减少至 ${this.getVideoTag().playbackRate}`);
-					}
-					break;
-				case "switchSpeedChange":
-					{
-						let videoTag=this.getVideoTag();
-						if(videoTag.playbackRate==1){
-							let switchSpeed=this.preSpeed?this.preSpeed:this.config.defaultSpeed.value;
-							this.changeVideoSpeed(switchSpeed);
-						}else{
-							this.changeVideoSpeed(1);
-						};
-						this.messageShow(`播放速度设置为 ${this.getVideoTag().playbackRate}`);
-					}
-					break;
-				case "switchWide":
-					this.wideSwitch();
-					break;
-				case "switchWebFullScreen":
-					this.webFullScreenSwitch();
-					break;
-				case "switchFullScreen":
-					this.fullScreenSwitch();
-					break;
-				default:
-					break;
-			}
 		},
 		/**
 		 * 生成下拉框
@@ -1256,13 +1091,7 @@
 				e.stopPropagation();
 				e.preventDefault();
 			};
-			//选择选项事件
-			let selectItemBoxClickFunc=(e)=>{
-				let target=e.target;
-				selectBoxContent.choiceIndex=target.index;
-			};
 			selectItemBox.addEventListener("wheel",selectItemBoxWhellFunc);
-			selectItemBox.addEventListener("click",selectItemBoxClickFunc);
 			for(let i=0;i<list.length;i++){
 				let element=list[i];
 				let {key,content}=element;
@@ -1274,7 +1103,10 @@
 				selectItem.switchActive=()=>{
 					selectItem.classList.toggle("active");
 				};
-
+				//选择选项事件
+				selectItem.addEventListener("click",()=>{
+					selectBoxContent.choiceIndex=i;
+				});
 				if (i==choiceIndex) {
 					selectBoxContent.value=element;
 					selectItem.switchActive();
@@ -1317,14 +1149,525 @@
 				}
 			}
 		},
-		//一次性函数
-		once(fn,nextfn=()=>{}){
-			if (fn.once){
-				nextfn();
-				return;
+		/**
+		 *
+		 * @param {number} value 值
+		 * @param {number} min 最小值
+		 * @param {number} max 最大值
+		 * @param {number} step 步长
+		 * @property {number} stepNumb 表示选中的是第几个点
+		 * @property {number} trueNumb 显示的数字
+		 * @property {Function} onChange 滚动条滑动时的回调函数
+		 * @property {Function} onChangeEnd 更改结束时的回调函数
+		 * @property {Function} initValue 设置初始值
+		 * @returns {HTMLDivElement} 数字输入框组件
+		 */
+		createNumberBox(value,min,max,step){//创建数字输入框
+			let container=document.createElement("div");
+			container.classList.add("numberBoxContainer");
+			let shadowRoot=container;
+			if (this.config.useShadowRoot.value) {
+				shadowRoot=container.attachShadow({ mode: 'open' });
+				let MaterialIconsStyle=document.createElement("style");
+				MaterialIconsStyle.innerText=GM_getResourceText("MaterialIcons");
+				
+				container.style=`
+						display: inline-block;
+						vertical-align: middle;
+						width:50px;
+				`;
+				shadowRoot.append(MaterialIconsStyle);
 			}
-			fn();
-			fn.once=1;
+			let style=document.createElement("style");
+			style.innerHTML=`
+				.numberBoxContainer{
+					display: inline-block;
+					vertical-align: middle;
+					width:50px;
+				}
+				.numberBox{
+					position: relative;
+					width:100%;
+					height: 16px;
+					font-size: 16px;
+				}
+				.valueBox{
+					position: absolute;
+					left: 0;
+					top: 0;
+					width: calc(100% - 16px);
+					height: 100%;
+					overflow: hidden;
+					text-align: right;
+					white-space: nowrap;
+				}
+				.valueBox:focus{
+					border:none;
+					outline: none;
+				}
+				.changeTools{
+					position: absolute;
+					display: flex;
+					flex-direction: column;
+					height: 100%;
+					right: 0;
+				}
+				.numberBox .material-icons{
+					font-size: 50%;
+					cursor: pointer;
+					user-select: none;
+				}
+				.numberBox .material-icons:hover{
+					color: #00a1d6;
+				}
+			`;
+			shadowRoot.append(style);
+
+			let numberBox=document.createElement('div');
+			numberBox.classList.add("numberBox");
+			let valueBox=document.createElement("span");
+			valueBox.classList.add("valueBox");
+			valueBox.setAttribute("contenteditable","true");
+
+			//光标指示器
+			let selection=window.getSelection();
+			if(this.config.useShadowRoot.value){
+				selection=shadowRoot.getSelection();
+			}
+
+			//input事件预处理
+			valueBox.addEventListener("keydown",(e)=>{
+				//阻止事件传播
+				e.stopPropagation();
+				if(e.key=="Enter"){
+					valueBox.blur();
+					return;
+				}
+				//输入有效数字之前记录位置
+				valueBox.preValue=valueBox.innerText;
+				valueBox.anchorOffset=selection.anchorOffset;
+				valueBox.focusOffset=selection.focusOffset;
+			})
+			//去除非法字符并
+			valueBox.addEventListener("input",(e)=>{
+				if(isNaN(Number(valueBox.innerText))||/ /.test(valueBox.innerText)){
+					valueBox.innerText=valueBox.preValue;
+					//重置光标位置
+					let range = new Range();
+					range.setStart(valueBox.firstChild, valueBox.anchorOffset);
+					range.setEnd(valueBox.firstChild, valueBox.focusOffset);
+					selection.removeAllRanges();
+					selection.addRange(range);
+				}
+				e.stopPropagation();
+			})
+
+			valueBox.addEventListener("paste",(e)=>{
+				let paste = (e.clipboardData || window.clipboardData);
+				//有图片、文件则禁止
+				let data=paste.files[0];
+				if (data){
+					console.log("已禁止图片或文件的粘贴");
+					e.preventDefault();
+				}
+			})
+
+			valueBox.addEventListener("blur",()=>{
+				let num=Number(valueBox.innerText);
+				if(isNaN(num)){
+					num=min;
+				}
+				if(num>max)num=max;
+				if(num<min)num=min;
+				container.value=num;
+				changehandler();
+			})
+			
+			let changeTools=document.createElement("div");
+			changeTools.classList.add("changeTools");
+
+			//+号-号键
+			let addIcon=this.createIcon("&#xe5ce;");
+			addIcon.classList.add("addIcon");
+			let minusIcon=this.createIcon("&#xe5cf;");
+			minusIcon.classList.add("minusIcon");
+
+			//触发changeEnd函数
+			let timmerClear=(e)=>{
+				if(e.button==0){
+					clearInterval(changeTools.timmer);
+					if(container.onChangeEnd){
+						container.onChangeEnd(container.value);
+					}
+				}
+			};
+			//触发change函数
+			let changehandler=()=>{
+				if(container.onChange){
+					container.onChange(container.value);
+				}
+			};
+
+			addIcon.addEventListener("mousedown",(e)=>{
+				if(e.button==0){
+					let calcValue=new BigNumber(container.value)
+									.plus(step)
+									.valueOf();
+					container.value=calcValue>max?max:calcValue;
+					changehandler();
+					changeTools.timmer=setInterval(()=>{
+						let calcValue=new BigNumber(container.value)
+										.plus(step)
+										.valueOf();
+						container.value=calcValue>max?max:calcValue;
+						changehandler();
+					},100);
+				}
+			});
+			addIcon.addEventListener("mouseup",timmerClear);
+			addIcon.addEventListener("mouseleave",timmerClear);
+
+			minusIcon.addEventListener("mousedown",(e)=>{
+				if(e.button==0){
+					let calcValue=new BigNumber(container.value)
+									.minus(step)
+									.valueOf();
+					container.value=calcValue<min?min:calcValue;
+					changehandler();
+					changeTools.timmer=setInterval(()=>{
+						let calcValue=new BigNumber(container.value)
+										.minus(step)
+										.valueOf();
+						container.value=calcValue<min?min:calcValue;
+						changehandler();
+					},100);
+				}
+			});
+			minusIcon.addEventListener("mouseup",timmerClear);
+			minusIcon.addEventListener("mouseleave",timmerClear);
+
+			changeTools.append(addIcon);
+			changeTools.append(minusIcon);
+			
+			numberBox.append(valueBox);
+			numberBox.append(changeTools);
+			
+			this.watchValue(container,"value");
+			container["value_onChange"]=(changedValue)=>{
+				valueBox.innerHTML=changedValue;
+			};
+			shadowRoot.append(numberBox);
+			container.value=value;
+			return container;
+		},
+		createSettingPanel() {//创建设置面板
+			//唯一化处理
+			if(this.settingPanel){
+				this.settingPanel.remove();
+			}
+			//创建确认窗口
+			let confirm=document.createElement("div");
+			confirm.style=`
+				position:fixed;
+				display:flex;
+				flex-direction:column;
+				min-width:660px;
+				min-height:380px;
+				inset:20%;
+				background:rgba(33,33,33,.9);
+				border:1px solid hsla(0,0%,100%,.12);
+				z-index:999;
+				box-shadow:rgb(0 0 0 / 25%) 0px 0px 10px 0px;
+				color:white;
+			`;
+			confirm.innerHTML=`<div style="position:relative;width:100%;text-align:center;font-size:16px;line-height:40px;">
+				${this.settingName}
+			</div>`;
+			let btnList=document.createElement('div');
+			btnList.style=`
+				position:absolute;
+				font-size:16px;
+				top:10px;
+				right:10px;
+			`;
+			//刷新按钮
+			let refreshBtn=this.createButton(this.createIcon("&#xe5d5;"),"重置设置");
+			refreshBtn.classList.add("material-icons");
+			refreshBtn.addEventListener("click",()=>{
+				this.resetSetting();
+			});
+			btnList.append(refreshBtn);
+			//关闭按钮
+			let exitBtn=this.createButton(this.createIcon("&#xe5cd;"),"关闭");
+			exitBtn.classList.add("material-icons");
+			exitBtn.addEventListener("click",()=>{
+				this.switchSettingPanel();
+			});
+			btnList.append(exitBtn);
+			confirm.append(btnList);
+
+
+			let gridBox=document.createElement("div");
+			gridBox.style=`
+				display:grid;
+				width:100%;
+				overflow:auto;
+				grid-template-columns:repeat(2,50%);
+			`;
+
+			for (let i = 0; i < Object.keys(this.config).length; i++) {
+				let key=Object.keys(this.config)[i];
+				let {type,title} = this.config[key];
+				
+				if (/hidden/.test(type)){
+					continue;
+				}
+
+				let grid=document.createElement("div");
+				this.gridListSettingMapper[key]=grid;
+				grid.dependency=[];
+
+				grid.style="margin:10px 20px;";
+				//添加说明
+				if(title) grid.title=title;
+				//根据类型创建设置项
+				if(type=="bool"){
+					let {name,value} = this.config[key];
+					//开关
+					let switchTag=this.createSwitch();
+					switchTag.style.marginRight="10px";
+					switchTag.initValue(value);
+					switchTag.onChange=()=>{
+						this.config[key].value=switchTag.switchValue;
+						console.log(this.config);
+						this.saveValue(key);
+					};
+					grid.valueChangeHandler=(key)=>{
+						if(this.config[key].value!=switchTag.switchValue){
+							switchTag.switch();
+						}
+					};
+					grid.append(switchTag);
+					//标题
+					let discribe=document.createElement("span");
+					discribe.innerText=name;
+					grid.append(discribe);
+				}else if(type=="keyboard"){
+					let {name,value,code} = this.config[key];
+					//标题
+					let discribe=document.createElement("span");
+					discribe.innerText=name;
+					grid.append(discribe);
+					//告诉依赖key，此key使用了这个依赖
+					this.gridListSettingMapper.keyBindOne2One.dependency.push(key);
+
+					//按键
+					let keyboard=document.createElement("kbd");
+					keyboard.title="点击进行设置";
+					keyboard.style=`
+						border: 2px solid #cdcdcd;
+						margin-left:10px;
+						padding: 0.25rem;
+						border-radius: 0.25rem;
+						font-size: .825rem;
+						box-shadow: inset 0 -1px 0 0 #cdcdcd;
+						cursor:pointer;
+						outline:none;
+					`;
+					keyboard.innerText=this.config.keyBindOne2One.value?code:value;
+					keyboard.tabIndex=0;
+					keyboard.addEventListener("focus",()=>{
+						keyboard.style.border="2px solid #00a1d6";
+					});
+					keyboard.addEventListener("blur",()=>{
+						keyboard.style.border="2px solid #cdcdcd";
+						keyboard.innerText=this.config.keyBindOne2One.value?this.config[key].code:this.config[key].value;
+					});
+
+					keyboard.addEventListener("keydown",(e)=>{
+						let valueText="",
+							codeText="";
+						if(e.ctrlKey){
+							valueText+=`Control`;
+							codeText+=`Control`;
+						}
+						if(e.altKey){
+							if(valueText)valueText+=` + `;
+							if(codeText)codeText+=` + `;
+							valueText+=`Alt`;
+							codeText+=`Alt`;
+						}
+						if(e.shiftKey){
+							if(valueText)valueText+=` + `;
+							if(codeText)codeText+=` + `;
+							valueText+=`Shift`;
+							codeText+=`Shift`;
+						}
+						if(e.key!=="Control"&&e.key!=="Alt"&&e.key!=="Shift"){
+							if(valueText)valueText+=` + `;
+							if(codeText)codeText+=` + `;
+							valueText+=e.key;
+							codeText+=e.code;
+							let result=this.config.keyBindOne2One.value?codeText:valueText;
+							let keyboard=this.getShortcutKeyName(result);
+							console.log(keyboard);
+							if (keyboard&&keyboard!=key) {
+								this.config[keyboard].name
+								this.messageShow(`快捷键与 "${this.config[keyboard].name}" 冲突`);
+								valueText=this.config[key].value;
+								codeText=this.config[key].code;
+							}else{
+								this.config[key].value=valueText;
+								this.config[key].code=codeText;
+								this.saveValue(key);
+							}
+						}
+						keyboard.innerText=this.config.keyBindOne2One.value?codeText:valueText;
+						e.stopPropagation();
+						e.preventDefault();
+					});
+					grid.valueChangeHandler=(key)=>{
+						let {value,code} = this.config[key];
+						keyboard.innerText=this.config.keyBindOne2One.value?code:value;
+					}
+					grid.append(keyboard);
+				}else if(type=="range"){//滑动条
+					let {name,start,end,step,value} = this.config[key];
+					let valueBox=document.createElement("div");
+					valueBox.style=`
+						margin-bottom:10px;
+					`;
+					//标题
+					let discribe=document.createElement("span");
+					discribe.innerText=name;
+					discribe.style.marginRight="10px";
+					discribe.style.verticalAlign="middle";
+					//数值
+					let valueText=this.createNumberBox(value,start,end,step);
+					valueBox.append(discribe);
+					valueBox.append(valueText);
+					grid.append(valueBox);
+					valueText.onChange=(value)=>{
+						this.config[key].value=value;
+						this.saveValue(key);
+					};
+
+					//告诉依赖key，此key使用了这个依赖
+					this.gridListSettingMapper.rangeTransition.dependency.push(key);
+
+					console.log(name,start,end,step,value);
+					let processbar=this.createProcessBar(start,end,step);
+					processbar.initValue(value);
+					processbar.onChange=(value)=>{
+						valueText.value=value;
+					};
+					processbar.onChangeEnd=(value)=>{
+						this.config[key].value=value;
+						this.saveValue(key);
+					};
+					grid.valueChangeHandler=(key)=>{
+						let {value} = this.config[key];
+						processbar.setTransition(this.config.rangeTransition.value);
+						processbar.initValue(value);
+					}
+					grid.append(processbar);
+				}else if(type=="select"){//下拉框
+					let {name,list,value} = this.config[key];
+					let valueBox=document.createElement("div");
+					valueBox.style=`
+						margin-bottom:10px;
+					`;
+					//标题
+					let discribe=document.createElement("span");
+					discribe.innerText=name;
+					discribe.style.marginRight="10px";
+					valueBox.append(discribe);
+					grid.append(valueBox);
+					let selectBox=this.createSelect(list,4,value);
+					selectBox.onValueChange=(value)=>{
+						let index=selectBox.choiceIndex;
+						this.config[key].value=index;
+						this.saveValue(key);
+					};
+					grid.valueChangeHandler=(key)=>{
+						let {value} = this.config[key];
+						if(selectBox.choiceIndex!=value)
+							selectBox.choiceIndex=value;
+					}
+					grid.append(selectBox);
+				}else if(type=="checkbox"){//多选框
+					let {name,value,totalControl,controlValue} = this.config[key];
+					let valueBox=document.createElement("div");
+					valueBox.style=`
+						margin-bottom:10px;
+					`;
+					//标题
+					let discribe=document.createElement("span");
+					discribe.innerText=name;
+					discribe.style.marginRight="10px";
+					valueBox.append(discribe);
+
+					//开关
+					let switchTag=this.createSwitch();
+					switchTag.style.marginRight="10px";
+					switchTag.initValue(controlValue);
+					switchTag.onChange=()=>{
+						this.config[key].controlValue=switchTag.switchValue;
+						console.log(this.config);
+						this.saveValue(key);
+					};
+
+					if (totalControl) {
+						valueBox.append(switchTag);
+					}
+
+					grid.append(valueBox);
+					let list=value.map((item,index)=>{
+						return this.config[item];
+					});
+					let checkboxBox=this.createCheckBox(list);
+					// checkboxBox.onValueChange=(value)=>{
+					// 	this.config[key].value=value;
+					// };
+					grid.valueChangeHandler=(key)=>{
+						let {value,totalControl,controlValue} = this.config[key];
+						if(totalControl&&controlValue!=switchTag.switchValue){
+							switchTag.switch();
+						}
+					}
+					grid.append(checkboxBox);
+				}
+				gridBox.appendChild(grid);
+				
+			}
+			confirm.append(gridBox);
+			this.getSettingRootElement().append(confirm);
+			this.settingPanel=confirm;
+		},
+		settingPanelReload(){//重新加载设置面板
+			this.settingPanel.remove();
+			this.createSettingPanel();
+		},
+		switchSettingPanel(){//切换设置面板
+			if(this.settingPanel){
+				this.settingPanel.remove();
+				this.settingPanel=null;
+			}else{
+				this.createSettingPanel();
+			}
+		},
+		/**
+		 * 执行按键功能
+		 * @param {string} key 键值
+		 */
+		keyHandler(key){
+			switch (key) {
+				case "openSettingShortcut":
+					this.switchSettingPanel();
+					break;
+				default:
+					break;
+			}
 		},
 		/**
 		 * 获取按键的功能名
@@ -1398,11 +1741,28 @@
 			`;
 			messageBox.innerText=message;
 			this.messageBox=messageBox;
-			this.getShowElement().appendChild(messageBox);
-			setTimeout(() => {
-				messageBox.remove();
-			}, displayTime);
+			this.getSettingRootElement().appendChild(messageBox);
+			if(displayTime){
+				setTimeout(() => {
+					messageBox.remove();
+				}, displayTime);
+			}
 
+		},
+		/**
+		 * 当key值发生改变时，用以通知页面改变
+		 * @param {String} key 更改的键
+		 */
+		valueChangeHandler(key){
+			let {type} = this.config[key];
+			let gridTag=this.gridListSettingMapper[key];
+			gridTag.valueChangeHandler(key);
+			let dependency=gridTag.dependency;
+			if(dependency.length){
+				dependency.forEach((item)=>{
+					this.valueChangeHandler(item);
+				});
+			}
 		},
 		saveValue(key){//保存配置
 			console.log("已保存"+key);
@@ -1552,14 +1912,16 @@
 						if (this.config.touchVolume.value) {
 							let dv=Math.floor(nowtouch.distance/20);
 							let volume=this.getVideoTag().volume;
-							let newvolume=floatCalc.evaluate(`${volume}-${dv}*5/100`);
+							let x=new BigNumber(volume);
+							let y=new BigNumber(dv).dividedBy(20);
+							let newvolume=x.minus(y);
 							if (newvolume>1) {
 								newvolume=1;
 							}else if (newvolume<0) {
 								newvolume=0;
 							}
 							if (isshow) {
-								this.messageShow(`${floatCalc.evaluate(`${newvolume}*100`)} %`);
+								this.messageShow(`${new BigNumber(newvolume).multipliedBy(100)} %`);
 							}else{
 								this.getVideoTag().volume=newvolume;
 							}
@@ -1592,33 +1954,6 @@
 				}
 			}
 		},
-		qualityControlBarInit(){//画质切换面板初始化
-			let qualityControlBarList=this.getQualityControlBar().querySelectorAll("li");
-			for (let i = 0; i < qualityControlBarList.length; i++) {
-				let element = qualityControlBarList[i];
-				let text=element.textContent;
-				if(/登录/.test(text)){//需要登录,登录后不显示
-					continue;
-				}else if(/大会员/.test(text)){//需要登录+大会员
-					
-				}else{
-					if(this.config.autoQuality.value){
-						element.click();
-					}
-					console.log(text);
-					break;
-				}
-				
-			}
-		},
-		speedControlBarInit(){//原生速度切换面板初始化
-			let speedControlBar=this.getSpeedControlBar();
-			speedControlBar.addEventListener("click",(e)=>{
-				let target=e.target;
-				let speed=Number(target.textContent.replace("x",""));
-				console.log(speed);
-			});
-		},
 		mixin(){//混入设置
 			console.log("开始混入设置");
 			let configBuffer=JSON.parse(JSON.stringify(this.default));
@@ -1643,72 +1978,6 @@
 				this.saveValue(key);
 			}
 			console.log("已重置设置");
-		},
-		preInit(){//预初始化
-			//根据网址得到标签选择器
-			this.getElementMapper();
-			this.mixin();
-			console.log("开始初始化键盘映射");
-			for (const key in this.config) {
-				let element = this.config[key];
-				let {type,value,code}=element;
-				if(type=="keyboard"){
-					this.keyboardBindList[key]=element;
-				}
-			}
-			console.log("键盘映射初始化完成，开始监听键盘事件");
-			this.bindKeyBoardListener();
-			console.log("成功监听键盘事件，开始注册脚本设置项");
-			GM_registerMenuCommand(this.settingName, this.switchSettingPanel.bind(this));
-			console.log("成功注册脚本设置项");
-			this.clockInit();
-			
-			this.listenHistoryChange(()=>{
-				this.clockInit();
-			});
-		},
-		clockInit(){//时钟初始化，只有当控制面板出来时才会初始化
-			let settingControlInit=()=>{
-				setTimeout(() => {
-					try {
-						console.log("初始化开始，更改屏幕尺寸");
-						let {list,value}=this.config.defaultScreenSize;
-						switch (list[value].key) {
-							case "wide":
-								if (this.iswideScreen()) {
-									
-								}else{
-									this.wideSwitch();
-								}
-								break;
-							case "webFullScreen":
-								if (this.isfullScreen()) {
-									
-								}else{
-									this.webFullScreenSwitch();
-								}
-								break;
-							default:
-								break;
-						};
-						console.log("屏幕尺寸更改完毕，开始调节视频速度");
-						if (this.config.autoSpeed.value) {
-							let speed=Cookies.get("videoSpeed");
-							let defaultSpeed=speed?speed:this.config.defaultSpeed.value;
-							this.changeVideoSpeed(defaultSpeed);
-							this.messageShow("已自动调整速度为"+defaultSpeed+"倍");
-						}
-						this.controlBarInit();
-						console.log("初始化已完成");
-					} catch (error) {
-						console.error(error.name);
-						console.error(error.message);
-						console.log("播放器控制栏未加载完成，等待重新开始");
-						settingControlInit();
-					}
-				}, 1000);
-			};
-			settingControlInit();
 		},
 		listenHistoryChange(func){//监听history变化
 			console.log("开始监听history变化");
@@ -1737,19 +2006,39 @@
 			});
 			console.log("已监听history变化");
 		},
-		controlBarInit(){//设置图标初始化
-			console.log("开始初始化控制栏");
-			this.getSettingIcon().addEventListener("click",this.switchSettingPanel.bind(this));
-			this.speedControlBarInit();
-			this.qualityControlBarInit();
-			console.log("开始监听触摸事件");
-			this.touchHandler(this.getShowElement());
+		preInit(){//预初始化
+			//根据网址得到标签选择器
+			this.getElementMapper();
+			this.mixin();
+			console.log("开始初始化键盘映射");
+			for (const key in this.config) {
+				let element = this.config[key];
+				let {type,value,code}=element;
+				if(type=="keyboard"){
+					this.keyboardBindList[key]=element;
+				}
+			}
+			console.log("键盘映射初始化完成，开始监听键盘事件");
+			this.bindKeyBoardListener();
+			console.log("成功监听键盘事件，开始注册脚本设置项");
+			GM_registerMenuCommand(this.settingName, this.switchSettingPanel.bind(this));
+			console.log("成功注册脚本设置项");
+			this.init();
+			
+			//路由改变重新初始化，同类型页面且无刷新页面时适用
+			this.listenHistoryChange(()=>{
+				this.init();
+			});
 		},
 		init(){
+			console.log("请更改init函数以继续");
+		},
+		main(){
 			this.preInit();
 		},
-		
+		...data,
+		...method
 	}
 	
-	bilibili.init();
+	tampermonkeyTool.main();
 })()
